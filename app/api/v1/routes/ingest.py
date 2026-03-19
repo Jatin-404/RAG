@@ -10,6 +10,7 @@ from app.services.ingestor import extract_text, chunk_text
 from app.services.embedder import embed_chunks
 from app.services.vectorstore import save_chunks
 from app.tasks.ingest_tasks import ingest_file_task
+from app.schemas.ingest import IngestResponse, QueuedResponse, JobStatusResponse
 
 router = APIRouter()
 
@@ -17,7 +18,7 @@ router = APIRouter()
 def ingest_health():
     return {"service": "ingest", "status": "ok"}
 
-@router.post("/upload")
+@router.post("/upload", response_model=QueuedResponse | IngestResponse)
 async def upload_file(
     file: UploadFile = File(...),
     department: str = Form("general"),
@@ -30,16 +31,10 @@ async def upload_file(
         tmp.write(await file.read())
         tmp_path = tmp.name
 
-    # background=True → Celery job, returns immediately
     if background:
         task = ingest_file_task.delay(tmp_path, file.filename, department, domain)
-        return {
-            "status": "queued",
-            "job_id": task.id,
-            "filename": file.filename
-        }
+        return QueuedResponse(status="queued", job_id=task.id, filename=file.filename)
 
-    # background=False → synchronous, waits for completion (default)
     try:
         text = extract_text(tmp_path)
         chunks = chunk_text(text)
@@ -52,15 +47,15 @@ async def upload_file(
             "custom_fields": {"department": department}
         }
         count = save_chunks(db, chunks, embeddings, metadata)
-        return {"status": "success", "filename": file.filename, "chunks_stored": count}
+        return IngestResponse(status="success", filename=file.filename, chunks_stored=count)
     finally:
         os.unlink(tmp_path)
 
-@router.get("/status/{job_id}")
+@router.get("/status/{job_id}", response_model=JobStatusResponse)
 def job_status(job_id: str):
     task = ingest_file_task.AsyncResult(job_id)
-    return {
-        "job_id": job_id,
-        "status": task.status,
-        "result": task.result if task.ready() else task.info
-    }
+    return JobStatusResponse(
+        job_id=job_id,
+        status=task.status,
+        result=task.result if task.ready() else task.info
+    )
