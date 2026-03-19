@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "celery>=5.6.2",
     "fastapi>=0.135.1",
     "langchain>=1.2.12",
     "langchain-community>=0.4.1",
@@ -12,9 +13,11 @@ dependencies = [
     "pgvector>=0.4.2",
     "psycopg2-binary>=2.9.11",
     "pydantic-settings>=2.13.1",
+    "pypandoc>=1.17",
     "python-multipart>=0.0.22",
+    "redis>=7.3.0",
     "sentence-transformers>=5.3.0",
     "sqlalchemy>=2.0.48",
-    "unstructured[docx]>=0.21.5",
+    "unstructured[docx,odt]>=0.21.5",
     "uvicorn[standard]>=0.42.0",
 ]
