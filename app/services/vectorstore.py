@@ -11,14 +11,42 @@ def save_chunks(
 ):
     records = []
     for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+        # Extract row/summary type from chunk text if present
+        chunk_type = "text"
+        sheet_name = None
+        
+        if chunk.startswith("[TABLE_SUMMARY"):
+            chunk_type = "table_summary"
+            # Extract sheet name from tag
+            try:
+                sheet_name = chunk.split("sheet=")[1].split("]")[0]
+            except Exception:
+                pass
+            # Store clean text without the tag
+            clean_chunk = chunk.split("]\n", 1)[-1]
+        elif chunk.startswith("[ROW"):
+            chunk_type = "row"
+            try:
+                sheet_name = chunk.split("sheet=")[1].split("]")[0]
+            except Exception:
+                pass
+            clean_chunk = chunk.split("]\n", 1)[-1]
+        else:
+            clean_chunk = chunk
+
+        custom_fields = metadata.get("custom_fields", {})
+        custom_fields["chunk_type"] = chunk_type
+        if sheet_name:
+            custom_fields["sheet"] = sheet_name
+
         record = LegalChunk(
             document_id=metadata.get("document_id"),
             filename=metadata.get("filename"),
             chunk_index=i,
-            chunk_text=chunk,
+            chunk_text=clean_chunk,
             department=metadata.get("department"),
             domain=metadata.get("domain"),
-            custom_fields=metadata.get("custom_fields", {}),
+            custom_fields=custom_fields,
             embedding=embedding
         )
         records.append(record)
@@ -27,6 +55,7 @@ def save_chunks(
     db.commit()
     return len(records)
 
+    
 def search_chunks(
     db: Session,
     query_embedding: list[float],
