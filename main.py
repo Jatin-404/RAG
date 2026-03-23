@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.routes import ingest, search
 from app.db.session import init_db
 import uvicorn
@@ -10,6 +11,15 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="RAG", version="1.0.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 app.include_router(ingest.router, prefix="/api/v1/ingest", tags=["ingest"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["search"])
