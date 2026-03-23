@@ -1,8 +1,9 @@
 from pydantic import BaseModel
 from typing import Any
+from uuid import UUID
 
 class SearchResult(BaseModel):
-    id: int
+    id: UUID
     filename: str
     department: str | None
     domain: str | None
@@ -15,7 +16,7 @@ class SearchResponse(BaseModel):
     results: list[SearchResult]
 
 class RankedResult(BaseModel):
-    id: int
+    id: UUID
     filename: str
     department: str | None
     domain: str | None

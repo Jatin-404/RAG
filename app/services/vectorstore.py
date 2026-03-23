@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
-from app.db.models import LegalChunk
-from pgvector.sqlalchemy import Vector
 from sqlalchemy import text
+from app.db.models import Document, Chunk
+import uuid
 
 def save_chunks(
     db: Session,
@@ -9,44 +9,43 @@ def save_chunks(
     embeddings: list[list[float]],
     metadata: dict
 ):
+    document_id = uuid.UUID(metadata.get("document_id")) if isinstance(metadata.get("document_id"), str) else metadata.get("document_id")
+
+    # 1. Insert document record first
+    doc = Document(
+        id=document_id,
+        filename=metadata.get("filename"),
+        department=metadata.get("department"),
+        domain=metadata.get("domain"),
+        chunk_count=len(chunks),
+        metadata_fields=metadata.get("custom_fields", {})
+    )
+    db.add(doc)
+    db.flush()  # write document before chunks (FK constraint)
+
+    # 2. Insert chunks with FK reference
     records = []
     for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-        # Extract row/summary type from chunk text if present
+        # Parse chunk type from tag
         chunk_type = "text"
-        sheet_name = None
-        
         if chunk.startswith("[TABLE_SUMMARY"):
             chunk_type = "table_summary"
-            # Extract sheet name from tag
-            try:
-                sheet_name = chunk.split("sheet=")[1].split("]")[0]
-            except Exception:
-                pass
-            # Store clean text without the tag
-            clean_chunk = chunk.split("]\n", 1)[-1]
         elif chunk.startswith("[ROW"):
             chunk_type = "row"
-            try:
-                sheet_name = chunk.split("sheet=")[1].split("]")[0]
-            except Exception:
-                pass
-            clean_chunk = chunk.split("]\n", 1)[-1]
-        else:
-            clean_chunk = chunk
+        elif chunk.startswith("[TEXT]"):
+            chunk_type = "text"
+        clean_chunk = chunk.split("]\n", 1)[-1] if "]" in chunk else chunk
 
-        custom_fields = metadata.get("custom_fields", {})
-        custom_fields["chunk_type"] = chunk_type
-        if sheet_name:
-            custom_fields["sheet"] = sheet_name
-
-        record = LegalChunk(
-            document_id=metadata.get("document_id"),
+        record = Chunk(
+            id=uuid.uuid4(),
+            document_id=document_id,
             filename=metadata.get("filename"),
             chunk_index=i,
             chunk_text=clean_chunk,
             department=metadata.get("department"),
             domain=metadata.get("domain"),
-            custom_fields=custom_fields,
+            chunk_type=chunk_type,
+            custom_fields=metadata.get("custom_fields", {}),
             embedding=embedding
         )
         records.append(record)
@@ -55,7 +54,7 @@ def save_chunks(
     db.commit()
     return len(records)
 
-    
+
 def search_chunks(
     db: Session,
     query_embedding: list[float],
@@ -63,24 +62,55 @@ def search_chunks(
     department: str = None,
     domain: str = None
 ):
-    filters = "WHERE 1=1"
+    filters = "WHERE c.document_id IN (SELECT id FROM documents WHERE is_deleted = FALSE)"
     params = {"embedding": str(query_embedding), "top_k": top_k}
 
     if department:
-        filters += " AND department = :department"
+        filters += " AND c.department = :department"
         params["department"] = department
     if domain:
-        filters += " AND domain = :domain"
+        filters += " AND c.domain = :domain"
         params["domain"] = domain
 
     sql = text(f"""
-        SELECT id, filename, department, domain, chunk_index, chunk_text, custom_fields,
-               1 - (embedding <=> CAST(:embedding AS vector)) AS score
-        FROM chunks
+        SELECT c.id, c.filename, c.department, c.domain, c.chunk_index,
+               c.chunk_text, c.custom_fields, c.chunk_type,
+               1 - (c.embedding <=> CAST(:embedding AS vector)) AS score
+        FROM chunks c
         {filters}
-        ORDER BY embedding <=> CAST(:embedding AS vector)
+        ORDER BY c.embedding <=> CAST(:embedding AS vector)
         LIMIT :top_k
     """)
 
-    results = db.execute(sql, params).fetchall()
-    return results
+    return db.execute(sql, params).fetchall()
+
+
+def delete_document(db: Session, document_id: str):
+    """
+    Soft delete — marks document as deleted.
+    Chunks remain in DB but excluded from search.
+    Hard delete also provided for full cleanup.
+    """
+    sql = text("""
+        UPDATE documents 
+        SET is_deleted = TRUE 
+        WHERE id = CAST(:document_id AS uuid)
+        RETURNING id, filename
+    """)
+    result = db.execute(sql, {"document_id": document_id}).fetchone()
+    db.commit()
+    return result
+
+
+def hard_delete_document(db: Session, document_id: str):
+    """
+    Hard delete — removes document and all chunks via CASCADE.
+    """
+    sql = text("""
+        DELETE FROM documents 
+        WHERE id = CAST(:document_id AS uuid)
+        RETURNING id, filename
+    """)
+    result = db.execute(sql, {"document_id": document_id}).fetchone()
+    db.commit()
+    return result
