@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.routes import ingest, search, documents
+from app.api.v1.routes import ingest, search, documents, chats
 from app.db.session import init_db
 import uvicorn
 
@@ -24,6 +24,7 @@ app.add_middleware(
 app.include_router(ingest.router, prefix="/api/v1/ingest", tags=["ingest"])
 app.include_router(search.router, prefix="/api/v1/search", tags=["search"])
 app.include_router(documents.router, prefix="/api/v1/documents", tags=["documents"])
+app.include_router(chats.router, prefix="/api/v1/chats", tags=["chats"])
 
 @app.get("/health")
 def health():

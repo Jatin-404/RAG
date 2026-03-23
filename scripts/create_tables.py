@@ -22,6 +22,11 @@ def main():
             CREATE INDEX IF NOT EXISTS idx_chunks_document_id
             ON chunks(document_id)
         """))
+
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id
+            ON chat_messages(session_id)
+        """))
         conn.commit()
 
     print("Tables and indexes created successfully.")

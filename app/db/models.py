@@ -33,3 +33,21 @@ class Chunk(Base):
     chunk_type  = Column(String, default="text")
     custom_fields = Column(JSON, default={})
     embedding   = Column(Vector(1024))
+
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title      = Column(String, default="New Chat")
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id = Column(UUID(as_uuid=True), ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False)
+    role       = Column(String, nullable=False)  # "user" or "ai"
+    content    = Column(String, nullable=False)
+    sources    = Column(JSON, default=[])
+    created_at = Column(DateTime, server_default=func.now())
