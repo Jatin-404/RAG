@@ -128,15 +128,38 @@ def _row_to_natural_language(sheet_name: str, row: pd.Series, columns: list) -> 
     
     return " | ".join(parts)
 
+def _handle_office_chunked(file_path: str) -> list[str]:
+    elements = partition(filename=file_path)
+    doc_text = "\n".join([str(el) for el in elements]).strip()
+
+    image_text = _extract_embedded_images(file_path)
+
+    if not image_text:
+        print("⚠️ No image text extracted")
+
+    chunks = []
+
+    if doc_text:
+        chunks.extend([f"[TEXT]\n{c}" for c in chunk_text(doc_text)])
+
+    if image_text:
+        records = [
+            block.strip()
+            for block in image_text.split("\n\n")
+            if block.strip()
+        ]
+        chunks.extend([f"[ROW]\n{r}" for r in records])
+
+    return chunks if chunks else [""]
+
+
 def extract_chunks(file_path: str) -> list[str]:
-    """
-    For tabular files — returns pre-made chunks, bypassing the text splitter.
-    For all other files — extracts text and splits normally.
-    """
     ext = Path(file_path).suffix.lower()
-    
+
     if ext in TABULAR_TYPES:
         return _handle_tabular_chunked(file_path)
+    elif ext in OFFICE_TYPES:
+        return _handle_office_chunked(file_path)
     else:
         text = extract_text(file_path)
         return chunk_text(text)
@@ -236,15 +259,21 @@ def _vision_extract_image(img) -> str:
     img.save(buffer, format="PNG")
     img_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
-    prompt = """Extract all text and data from this image.
-                If it contains a table, output each row on a new line with columns separated by ' | '.
-                If it contains regular text, output it as-is.
-                Return only the extracted content, no explanations."""
+    prompt = """Extract structured data from this document image.
+                STRICT RULES:
+                - Each row MUST be separated by exactly ONE blank line
+                - Each row MUST represent ONE record only
+                - Format: ColumnName: Value | ColumnName: Value
+                - Do NOT merge multiple rows
+                - Do NOT skip any values
+                - If unsure, still output best guess
+
+                Return ONLY the extracted data."""
 
     response = requests.post(
         f"{settings.OLLAMA_URL}/api/generate",
         json={
-            "model": "llava",
+            "model": settings.VISION_MODEL,
             "prompt": prompt,
             "images": [img_base64],
             "stream": False
@@ -262,7 +291,6 @@ def _extract_embedded_images(file_path: str) -> str:
             image_files = [
                 f for f in z.namelist()
                 if Path(f).suffix.lower() in image_extensions
-                and ("media/" in f or "word/media/" in f)
             ]
 
             for image_file in image_files:
@@ -294,6 +322,9 @@ def _extract_embedded_images(file_path: str) -> str:
 
     except zipfile.BadZipFile:
         pass
+
+    print("ZIP CONTENTS:", z.namelist())
+    print("IMAGE FILES FOUND:", image_files)
 
     return "\n".join(extracted_texts)
 

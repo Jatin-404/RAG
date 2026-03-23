@@ -72,3 +72,31 @@ def ask(
         answer=answer,
         sources=[RankedResult(**r) for r in reranked]
     )
+
+@router.get("/documents")
+def list_documents(db: Session = Depends(get_db)):
+    from sqlalchemy import text
+    rows = db.execute(text("""
+        SELECT 
+            filename,
+            department,
+            domain,
+            COUNT(*) as chunk_count,
+            MIN(ingestion_timestamp) as ingestion_timestamp
+        FROM chunks
+        GROUP BY filename, department, domain
+        ORDER BY ingestion_timestamp DESC
+    """)).fetchall()
+
+    return {
+        "documents": [
+            {
+                "filename": row.filename,
+                "department": row.department,
+                "domain": row.domain,
+                "chunk_count": row.chunk_count,
+                "ingestion_timestamp": row.ingestion_timestamp
+            }
+            for row in rows
+        ]
+    }
