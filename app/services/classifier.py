@@ -6,8 +6,15 @@ CLASSIFY_PROMPT = """You are a document classifier for a company's internal docu
 
 Analyze the following document excerpt and return a JSON object with these fields:
 - department: one of [hr, legal, finance, engineering, operations, general]
-- domain: a short specific label like leave_policy, contract, invoice, onboarding, rfc, budget
+- domain: a short specific label like leave_policy, contract, invoice, onboarding, rfc, budget, legal_policy, compliance
 - custom_fields: a dict of any relevant metadata you can extract (document_type, topics, entities, dates mentioned)
+
+Department classification rules:
+- legal: contracts, agreements, policies with legal clauses, compliance documents, court documents, judgments, NDAs, terms of service, privacy policy, legal notices
+- hr: employee records, employee data, staff information, personnel, salary, department assignments, joining dates, employee ID, workforce data, leave policy, attendance, recruitment, onboarding, appraisal, offer letters
+- finance: invoices, budgets, balance sheets, financial reports, purchase orders, receipts
+- engineering: technical docs, RFCs, architecture docs, API specs, system design
+- operations: SOPs, process documents, operational guidelines, maintenance
 
 Return ONLY valid JSON. No explanation, no markdown, no extra text.
 
@@ -17,8 +24,8 @@ Document excerpt:
 JSON:"""
 
 def classify_document(text: str) -> dict:
-    # Use first 1000 chars — enough context, not too slow
-    excerpt = text[:1000]
+    # Use first 2000 chars — enough context, not too slow
+    excerpt = text[:2000]
     prompt = CLASSIFY_PROMPT.format(text=excerpt)
 
     response = requests.post(

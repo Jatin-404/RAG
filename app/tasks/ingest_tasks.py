@@ -1,5 +1,6 @@
 import uuid
 import os
+from pathlib import Path
 from celery import Celery
 from app.core.config import settings
 from app.db.session import SessionLocal
@@ -14,6 +15,30 @@ celery_app = Celery(
     backend=settings.REDIS_URL
 )
 
+TABULAR_TYPES = {'.csv', '.xlsx', '.xls', '.ods'}
+
+def build_classifier_text(file_path: str, filename: str, chunks: list[str]) -> str:
+    """
+    For tabular files — prepend column names so classifier has enough signal.
+    For all other files — use first 3 chunks as before.
+    """
+    ext = Path(filename).suffix.lower()
+
+    if ext in TABULAR_TYPES:
+        try:
+            import pandas as pd
+            if ext == '.csv':
+                df = pd.read_csv(file_path)
+            else:
+                df = pd.read_excel(file_path, sheet_name=0)
+            columns = list(df.columns)
+            return f"Spreadsheet columns: {', '.join(columns)}\n\n" + " ".join(chunks[:3])
+        except Exception:
+            pass
+
+    return " ".join(chunks[:3])
+
+
 @celery_app.task(bind=True)
 def ingest_file_task(self, file_path: str, filename: str):
     try:
@@ -22,8 +47,7 @@ def ingest_file_task(self, file_path: str, filename: str):
         json_meta = extract_json_metadata(file_path)
 
         self.update_state(state="PROGRESS", meta={"step": "classifying"})
-        # Use first 3 chunks joined for classification context
-        text_for_classifier = " ".join(chunks[:3])
+        text_for_classifier = build_classifier_text(file_path, filename, chunks)
         classification = classify_document(text_for_classifier)
 
         resolved_department = classification.get("department") or "general"
@@ -75,3 +99,4 @@ def ingest_file_task(self, file_path: str, filename: str):
                     os.unlink(file_path)
             except PermissionError:
                 pass
+        raise self.retry(exc=e, countdown=5, max_retries=3)

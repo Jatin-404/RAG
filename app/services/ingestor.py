@@ -323,8 +323,6 @@ def _extract_embedded_images(file_path: str) -> str:
     except zipfile.BadZipFile:
         pass
 
-    print("ZIP CONTENTS:", z.namelist())
-    print("IMAGE FILES FOUND:", image_files)
 
     return "\n".join(extracted_texts)
 
